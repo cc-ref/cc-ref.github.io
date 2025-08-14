@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Common Core Quick Reference Tool</title>
+<meta name="description" content="Quickly browse and search Common Core State Standards by subject and grade. A fast reference tool for educators and students.">
+<meta name="keywords" content="Common Core, education standards, quick reference, K-12, grades, objectives">
+<meta name="robots" content="index, follow">
+<meta name="language" content="en">
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+body { 
+    padding:0; 
+    background:#e0e0e0; 
+    font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; 
+    color:#212529; 
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+}
+header, footer {
+    background:#0d6efd;
+    color:white;
+    padding:.75rem 1rem;
+    text-align:center;
+}
+header h1, footer p { margin:0; cursor:pointer; }
+footer a { color:#ffffff; text-decoration:underline; }
+.container-fluid { flex:1; display:flex; justify-content:center; padding:1rem; }
+#app { width:100%; max-width:900px; }
+.panel-card { border-radius:.5rem; padding:1rem; background:#ffffff; border:1px solid rgba(0,0,0,0.2); box-shadow:0 6px 18px rgba(0,0,0,0.1); }
+.grade-list, .main-list { display:flex; flex-direction:column; gap:.5rem; }
+.grade-btn, .main-btn { text-align:left; border-radius:.375rem; padding:.75rem 1rem; font-weight:700; color:#0d6efd; background:#f8f9fa; border:1px solid rgba(13,110,253,0.3); transition:.15s; }
+.grade-btn:hover, .main-btn:hover { background:#e0e0e0; }
+.grade-btn.active, .main-btn.active { background:#0d6efd; color:#fff; box-shadow:0 6px 18px rgba(13,110,253,0.3); }
+.standard-row { display:flex; gap:1rem; align-items:center; padding:.75rem; border-radius:.375rem; transition:.08s; border:1px solid rgba(0,0,0,0.15); background:#ffffff; }
+.standard-row:hover { background: rgba(0,0,0,0.05); transform:translateY(-1px); cursor:pointer; }
+.code-col { min-width:110px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; font-weight:700; color:#0d6efd; }
+.short-desc { color:#495057; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.chev { margin-left:auto; color:#6c757d; font-weight:700; }
+.group-header { margin-top:1rem; margin-bottom:.5rem; font-weight:700; display:flex; gap:.5rem; align-items:center; }
+.group-pill { font-size:.78rem; padding:.25rem .6rem; border-radius:.375rem; background:#495057; color:white; }
+.group-card { border-radius:.5rem; padding:1rem; background:#e0f0ff; border:1px solid rgba(13,110,253,0.4); margin-bottom:1rem; }
+.group-card h1 { font-size:2rem; color:#0d6efd; margin-bottom:1rem; }
+.grade-display { font-size:1.5rem; font-weight:700; color:#0d6efd; margin-bottom:.5rem; } /* larger grade */
+.short-desc-card { border-radius:.375rem; padding:1rem; background:#f0f0f0; border:1px solid rgba(0,0,0,0.15); margin-bottom:.75rem; }
+.long-desc-card { border-radius:.375rem; padding:1rem; background:#ffffff; border:1px solid rgba(0,0,0,0.2); box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+.detail-markdown img { max-width:100%; height:auto; }
+#search-input { border-color: rgba(0,0,0,0.3); background:#fff; color:#212529; }
+.input-group-text, #clear-search { background:#e0e0e0; border-color: rgba(0,0,0,0.3); color:#212529; }
+</style>
+</head>
+<body>
+<header id="app-header"><h1>Common Core Quick Reference Tool</h1></header>
+<div class="container-fluid"><div id="app"></div></div>
+<footer>
+<p>Content provided by <a href="http://www.corestandards.org/" target="_blank">Common Core State Standards Initiative</a>. ©️2010</p>
+<p>For my wife. Love, SB</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const appEl = document.getElementById('app');
+let dataList=[], currentMain='', currentGrade='', currentFilter='';
+
+document.getElementById('app-header').addEventListener('click',()=>{ currentMain=''; renderMainSelection(); window.scrollTo({top:0,behavior:'smooth'}); });
+
+function escapeHtml(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+async function loadData(){ const r = await fetch('data.json'); if(!r.ok) throw new Error(r.status); dataList = await r.json(); }
+function gradeSortOrderList(grades){ const unique=[...new Set(grades)]; unique.sort((a,b)=>{ function rank(g){ if(!g) return {r:10000,k:g}; const gl=String(g).trim(), lower=gl.toLowerCase(); if(lower.indexOf('kinderg')!==-1 || lower==='k') return {r:0,k:0}; const m=gl.match(/(\d{1,3})/); return m?{r:parseInt(m[1],10),k:parseInt(m[1],10)}:{r:1000,k:gl}; } const A=rank(a),B=rank(b); if(A.r!==B.r) return A.r-B.r; if(typeof A.k==='number' && typeof B.k==='number') return A.k-B.k; return String(a).localeCompare(String(b)); }); return unique; }
+function getHashParts(){ return location.hash.replace(/^#/,'').split('/').filter(Boolean); }
+function pushRoute(hash){ history.pushState(null,'','#'+hash); handleRouting(); }
+
+function renderMainSelection(){
+    const mains = [...new Set(dataList.map(i=>i.main))].sort();
+    let html='<div class="panel-card"><h4 class="mb-3">Select a Subject</h4><div class="main-list">';
+    mains.forEach(m=>{ html+=`<button class="main-btn" data-main=${JSON.stringify(m)}>${escapeHtml(m)}</button>`; });
+    html+='</div></div>';
+    appEl.innerHTML=html;
+    document.querySelectorAll('.main-btn').forEach(el=>{ el.addEventListener('click',()=>{ currentMain=el.dataset.main; renderGradeSelection(); window.scrollTo({top:0,behavior:'smooth'}); }); });
+}
+
+function renderGradeSelection(){
+    let grades = dataList.map(i=>i.grade);
+    if(currentMain) grades = dataList.filter(i=>i.main===currentMain).map(i=>i.grade);
+    grades = gradeSortOrderList(grades);
+    let html=`<div class="panel-card"><h4 class="mb-3">Select a Grade${currentMain?' for '+escapeHtml(currentMain):''}</h4><div class="grade-list">`;
+    grades.forEach(g=>{ html+=`<button class="grade-btn" data-grade=${JSON.stringify(g)}>${escapeHtml(g)}</button>`; });
+    html+='</div></div>';
+    appEl.innerHTML=html;
+    document.querySelectorAll('.grade-btn').forEach(el=>{ el.addEventListener('click',()=>{ currentGrade=el.dataset.grade; pushRoute('grade/'+encodeURIComponent(currentGrade)); }); });
+}
+
+function renderObjectivesForGrade(grade){
+    currentGrade=grade; currentFilter='';
+    let filtered = dataList.filter(i=>i.grade===grade);
+    if(currentMain) filtered = filtered.filter(i=>i.main===currentMain);
+    if(!filtered.length){ appEl.innerHTML=`<div class="alert alert-warning">No objectives found for: ${escapeHtml(grade)}</div>`; return; }
+    const groups=[...new Set(filtered.map(i=>i.objective_group))].sort();
+    let html=`<div class="d-flex align-items-center mb-3"><button class="btn btn-link p-0 me-2" id="back-to-grades">&larr; Back</button><h4 class="m-0">${escapeHtml(grade)}</h4></div>`;
+    html+=`<div class="mb-3"><div class="input-group"><span class="input-group-text">🔎</span><input id="search-input" class="form-control" placeholder="Search standards..."><button id="clear-search" class="btn btn-outline-secondary">Clear</button></div></div>`;
+    html+='<div id="standards-container">';
+    groups.forEach(group=>{
+    html += `<div class="group-block" data-group=${JSON.stringify(group)}>
+        <div class="group-header">
+            <div class="badge bg-secondary group-pill me-2">Group</div>
+            <div class="fw-semibold">${escapeHtml(group)}</div>
+        </div>
+        <div class="list-group mb-3">`;
+    
+    filtered.filter(i=>i.objective_group===group)
+        .sort((a,b)=>a.objective.localeCompare(b.objective))
+        .forEach(item=>{
+            html+=`<button type="button" class="list-group-item list-group-item-action standard-row d-flex align-items-center" data-objective=${JSON.stringify(item.objective)}>
+                <div class="code-col me-3">${escapeHtml(item.objective)}</div>
+                <div class="short-desc flex-grow-1 text-truncate">${escapeHtml(item.short_description||'(no description)')}</div>
+                <div class="chev">&rsaquo;</div>
+            </button>`;
+        });
+
+    html += `</div></div>`;
+});
+
+    html+='</div>';
+    appEl.innerHTML=html;
+    document.getElementById('back-to-grades').addEventListener('click',()=>{ if(currentMain) renderGradeSelection(); else renderMainSelection(); });
+    document.querySelectorAll('.standard-row').forEach(el=>{ el.addEventListener('click',()=>pushRoute('standards/'+el.dataset.objective)); });
+    const searchInput=document.getElementById('search-input'), clearBtn=document.getElementById('clear-search');
+    let debounceTimer=null;
+    searchInput.addEventListener('input',()=>{ clearTimeout(debounceTimer); debounceTimer=setTimeout(()=>{ currentFilter=searchInput.value.trim(); applyFilter(); },150); });
+    clearBtn.addEventListener('click',()=>{ searchInput.value=''; currentFilter=''; applyFilter(); });
+    window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function applyFilter(){
+    if(!currentFilter){ document.querySelectorAll('.group-block').forEach(b=>b.style.display=''); document.querySelectorAll('.standard-row').forEach(r=>r.style.display=''); return; }
+    const q=currentFilter.toLowerCase();
+    document.querySelectorAll('.standard-row').forEach(r=>{
+        const objective=r.dataset.objective||'';
+        const obj=dataList.find(d=>d.objective===objective);
+        const match=objective.toLowerCase().includes(q)||(obj?.short_description||'').toLowerCase().includes(q)||(obj?.description||'').toLowerCase().includes(q);
+        r.style.display=match?'':'none';
+    });
+    document.querySelectorAll('.group-block').forEach(b=>{
+        const anyVisible=Array.from(b.querySelectorAll('.standard-row')).some(r=>r.style.display!=='none');
+        b.style.display=anyVisible?'':'none';
+    });
+}
+
+function renderStandard(objective){
+    const obj = dataList.find(d => d.objective === objective);
+    if(!obj){ appEl.innerHTML = `<div class="alert alert-warning">Standard not found: ${escapeHtml(objective)}</div>`; return; }
+    
+    // Update page title
+    document.title = `${obj.objective} - Common Core`;
+    
+    let html = `<div class="d-flex align-items-center mb-3">
+        <button class="btn btn-link p-0 me-2" onclick="history.back()">&larr; Back</button>
+        <div class="grade-display">${escapeHtml(obj.grade)}</div>
+    </div>`;
+    
+    html += `<div class="group-card"><h1>${escapeHtml(obj.objective_group)} - ${escapeHtml(obj.objective)}</h1>`;
+    if(obj.short_description){ html += `<div class="short-desc-card"><h3 class="mb-0">${escapeHtml(obj.short_description)}</h3></div>`; }
+    html += `<div class="long-desc-card mt-2 detail-markdown">${obj.description || ''}</div></div>`;
+    
+    appEl.innerHTML=html;
+    window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function handleRouting(){
+    const parts=getHashParts();
+    if(!parts.length){ renderMainSelection(); return; }
+    if(parts[0]==='grade'){ const grade=decodeURIComponent(parts[1]||''); if(grade) renderObjectivesForGrade(grade); return; }
+    if(parts[0]==='standards'){ const obj=parts[1]||''; if(obj) renderStandard(obj); return; }
+    renderMainSelection();
+}
+
+loadData().then(handleRouting).catch(err=>{ appEl.innerHTML=`<div class="alert alert-danger">Failed to load data.json: ${escapeHtml(err.message)}</div>`; });
+window.addEventListener('popstate',handleRouting);
+window.addEventListener('hashchange',handleRouting);
+</script>
+</body>
+</html>
